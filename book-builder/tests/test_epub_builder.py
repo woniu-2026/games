@@ -61,7 +61,7 @@ def test_build_epub_integration(tmp_path):
     with zipfile.ZipFile(result, "r") as zf:
         names = zf.namelist()
 
-    assert "mimetype" in names
+    assert names[0] == "mimetype"
     assert "META-INF/container.xml" in names
     assert "OEBPS/content.opf" in names
     assert "OEBPS/xhtml/cover.xhtml" in names
