@@ -1,15 +1,18 @@
 """ePUB3 package builder — constants and templates for animated picture books"""
 
+import os
+import shutil
+import uuid
+import zipfile
+from pathlib import Path
+from xml.sax.saxutils import escape
+
 # ── ePUB3 文件布局常量 ──
 META_INF = "META-INF"
 OEBPS = "OEBPS"
 XHTML_DIR = "xhtml"
 CSS_DIR = "css"
 IMAGE_DIR = "images"
-CONTAINER_PATH = f"{META_INF}/container.xml"
-CONTENT_OPF_PATH = f"{OEBPS}/content.opf"
-TOC_PATH = f"{OEBPS}/toc.xhtml"
-STYLE_CSS_PATH = f"{OEBPS}/{CSS_DIR}/style.css"
 
 # ── 容器模板 ──
 CONTAINER_XML = """<?xml version="1.0" encoding="UTF-8"?>
@@ -123,12 +126,6 @@ html, body {
 
 # ── 打包函数 ──
 
-import os
-import shutil
-import zipfile
-import uuid
-from pathlib import Path
-
 
 def build_epub(book_meta: dict, pages: list[dict], output_path: str | Path,
                image_source_dir: str | Path = ".") -> Path:
@@ -216,7 +213,6 @@ def _create_structure(epub_root: Path, meta: dict, pages: list[dict],
 
 def _build_toc(title: str, cover_label: str | None, entries: list[tuple[str, str]]) -> str:
     """生成 toc.xhtml 导航页面。"""
-    from xml.sax.saxutils import escape
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">',
@@ -229,9 +225,9 @@ def _build_toc(title: str, cover_label: str | None, entries: list[tuple[str, str
         "      <ol>",
     ]
     if cover_label:
-        lines.append(f'        <li><a href="xhtml/cover.xhtml">{escape(cover_label)}</a></li>')
+        lines.append(f'        <li><a href="cover.xhtml">{escape(cover_label)}</a></li>')
     for xhtml_name, label in entries:
-        lines.append(f'        <li><a href="xhtml/{xhtml_name}">{escape(label)}</a></li>')
+        lines.append(f'        <li><a href="{xhtml_name}">{escape(label)}</a></li>')
     lines.extend([
         "      </ol>",
         "    </nav>",
@@ -243,8 +239,6 @@ def _build_toc(title: str, cover_label: str | None, entries: list[tuple[str, str
 
 def _build_opf(meta: dict, pages: list[dict], cover_image: str) -> str:
     """生成 content.opf 元数据文件。"""
-    from xml.sax.saxutils import escape
-
     title = escape(meta.get("title", "Untitled"))
     creator = escape(meta.get("creator", "Unknown"))
     lang = escape(meta.get("language", "en"))
