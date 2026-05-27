@@ -6,6 +6,7 @@ import uuid
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
+from page_renderer import render_page, render_cover
 
 # ── ePUB3 文件布局常量 ──
 META_INF = "META-INF"
@@ -157,7 +158,6 @@ def build_epub(book_meta: dict, pages: list[dict], output_path: str | Path,
 def _create_structure(epub_root: Path, meta: dict, pages: list[dict],
                       image_source: Path):
     """创建 ePUB 临时目录结构并写入所有文件。"""
-    from page_renderer import render_page, render_cover
 
     # 创建目录
     dirs = {
@@ -179,7 +179,8 @@ def _create_structure(epub_root: Path, meta: dict, pages: list[dict],
     # 3. 封面页
     cover_image = meta.get("cover", "")
     if cover_image:
-        cover_xhtml = render_cover(cover_image, f"../{CSS_DIR}/style.css")
+        # XHTML 在 xhtml/ 子目录中，图片路径需加 ../ 前缀
+        cover_xhtml = render_cover(f"../{cover_image}", f"../{CSS_DIR}/style.css")
         (dirs["XHTML"] / "cover.xhtml").write_text(cover_xhtml, encoding="utf-8")
 
     # 4. 每页 xhtml
@@ -187,7 +188,12 @@ def _create_structure(epub_root: Path, meta: dict, pages: list[dict],
     for i, page in enumerate(pages):
         page_num = page.get("id", i + 1)
         xhtml_name = f"page_{page_num:03d}.xhtml"
-        xhtml_content = render_page(page, f"../{CSS_DIR}/style.css")
+        # 复制 page dict 并给图片路径加 ../ 前缀（从 xhtml/ 指向 images/）
+        page_copy = dict(page)
+        for key in ("bg", "mid", "fg"):
+            if page_copy.get(key):
+                page_copy[key] = f"../{page_copy[key]}"
+        xhtml_content = render_page(page_copy, f"../{CSS_DIR}/style.css")
         (dirs["XHTML"] / xhtml_name).write_text(xhtml_content, encoding="utf-8")
         toc_entries.append((xhtml_name, f"第{page_num}页"))
 
