@@ -1,0 +1,31 @@
+{
+  "metadata": {
+    "title": "森林里的小冒险",
+    "creator": "佚名",
+    "language": "zh",
+    "identifier": "urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "cover": "images/cover.jpg"
+  },
+  "pages": [
+    {
+      "id": 1,
+      "bg": "images/bg_001.jpg",
+      "mid": "images/mid_001.png",
+      "fg": "images/fg_001.png",
+      "text": "从前，有一只小兔子叫跳跳。"
+    },
+    {
+      "id": 2,
+      "bg": "images/bg_002.jpg",
+      "fg": "images/fg_002.png",
+      "text": "它住在森林深处的一个小树洞里。"
+    },
+    {
+      "id": 3,
+      "bg": "images/bg_003.jpg",
+      "mid": "images/mid_003.png",
+      "fg": "images/fg_003.png",
+      "text": "有一天，跳跳决定去冒险。"
+    }
+  ]
+}
