@@ -1,12 +1,6 @@
-"""ePUB3 package builder — generates OPF, TOC, container.xml and packs .epub"""
+"""ePUB3 package builder — constants and templates for animated picture books"""
 
-from pathlib import Path
-from xml.etree.ElementTree import Element, SubElement, tostring
-import zipfile
-import os
-import mimetypes
-
-# ── ePUB3 必须的文件布局 ──
+# ── ePUB3 文件布局常量 ──
 META_INF = "META-INF"
 OEBPS = "OEBPS"
 XHTML_DIR = "xhtml"
