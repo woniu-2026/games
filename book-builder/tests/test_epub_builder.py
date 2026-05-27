@@ -42,9 +42,9 @@ def test_build_epub_integration(tmp_path):
     assert names[0] == "mimetype"
     assert "META-INF/container.xml" in names
     assert "EPUB/content.opf" in names
-    assert "EPUB/xhtml/cover.xhtml" in names
-    assert "EPUB/xhtml/page_001.xhtml" in names
-    assert "EPUB/xhtml/page_002.xhtml" in names
+    assert "EPUB/cover.xhtml" in names
+    assert "EPUB/page_001.xhtml" in names
+    assert "EPUB/page_002.xhtml" in names
     assert "EPUB/style.css" in names
     assert "EPUB/images/bg_001.jpg" in names
     assert "EPUB/images/fg_001.png" in names

@@ -99,6 +99,18 @@ html, body {
 @page {
   margin: 0;
   padding: 0;
+  size: 1440px 1080px;
+}
+
+@media amzn-mobi {
+  @page { margin: 0 !important; }
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  widows: 0;
+  orphans: 0;
 }
 """
 
@@ -129,15 +141,18 @@ def build_epub(book_meta: dict, pages: list[dict], output_path: str | Path,
     if creator := book_meta.get("creator"):
         book.add_author(creator)
 
-    # ── 渲染模式：pre-paginated ──
+    # ── 渲染模式：pre-paginated（固定版面，单页显示） ──
     book.add_metadata(None, "meta", "pre-paginated", {
         "property": "rendition:layout"
     })
     book.add_metadata(None, "meta", "auto", {
         "property": "rendition:orientation"
     })
-    book.add_metadata(None, "meta", "auto", {
+    book.add_metadata(None, "meta", "none", {
         "property": "rendition:spread"
+    })
+    book.add_metadata(None, "meta", "ltr", {
+        "property": "rendition:page-progression-direction"
     })
 
     # ── CSS ──
@@ -151,18 +166,23 @@ def build_epub(book_meta: dict, pages: list[dict], output_path: str | Path,
 
     # ── 封面图片 ──
     cover_image = book_meta.get("cover", "")
+    cover_ext = ".jpg"
     if cover_image:
         cover_img_path = image_source / os.path.basename(cover_image)
         if cover_img_path.exists():
             with open(cover_img_path, "rb") as f:
                 img_data = f.read()
+            cover_ext = cover_img_path.suffix.lower()
+            mime = "image/jpeg" if cover_ext in (".jpg", ".jpeg") else "image/png"
             cover_img_item = epub.EpubImage(
                 uid="cover-img",
-                file_name="images/cover-img.jpg",
-                media_type="image/jpeg",
+                file_name=f"images/cover-img{cover_ext}",
+                media_type=mime,
                 content=img_data
             )
             book.add_item(cover_img_item)
+            # 标记封面图片（ePUB2 兼容）
+            book.add_metadata(None, "meta", "cover-img", {"name": "cover"})
 
     # ── 处理每页图片并添加为 EpubImage ──
     page_images = {}  # (page_num, key) -> file_name
@@ -196,41 +216,42 @@ def build_epub(book_meta: dict, pages: list[dict], output_path: str | Path,
     if cover_image:
         cover = epub.EpubHtml(
             title="封面",
-            file_name="xhtml/cover.xhtml",
+            file_name="cover.xhtml",
             lang=book_meta.get("language", "zh")
         )
-        cover_css_path = "../style.css"
-        cover_content = render_cover("../images/cover-img.jpg", cover_css_path)
+        cover.add_meta(name="viewport", content="width=1440, height=1080")
+        cover_content = render_cover(f"images/cover-img{cover_ext}", "style.css")
         cover.content = cover_content.encode("utf-8")
         cover.add_item(css_item)
         book.add_item(cover)
         spine.append(cover)
-        toc_items.append(epub.Link("xhtml/cover.xhtml", "封面", "cover-nav"))
+        toc_items.append(epub.Link("cover.xhtml", "封面", "cover-nav"))
 
     # 内容页
     for i, page in enumerate(pages):
         page_num = page.get("id", i + 1)
         xhtml_name = f"page_{page_num:03d}.xhtml"
 
-        # 调整图片路径（从 xhtml/ 到 images/）
+        # 图片路径相对于 EPUB/ 根目录
         page_copy = dict(page)
         for key in ("bg", "mid", "fg"):
             if page_copy.get(key):
                 filename = os.path.basename(page_copy[key])
-                page_copy[key] = f"../images/{filename}"
+                page_copy[key] = f"images/{filename}"
 
-        xhtml_content = render_page(page_copy, "../style.css")
+        xhtml_content = render_page(page_copy, "style.css")
 
         chapter = epub.EpubHtml(
             title=f"第{page_num}页",
-            file_name=f"xhtml/{xhtml_name}",
+            file_name=xhtml_name,
             lang=book_meta.get("language", "zh")
         )
+        chapter.add_meta(name="viewport", content="width=1440, height=1080")
         chapter.content = xhtml_content.encode("utf-8")
         chapter.add_item(css_item)
         book.add_item(chapter)
         spine.append(chapter)
-        toc_items.append(epub.Link(f"xhtml/{xhtml_name}", f"第{page_num}页", f"page-{page_num:03d}"))
+        toc_items.append(epub.Link(xhtml_name, f"第{page_num}页", f"page-{page_num:03d}"))
 
     # ── 设置目录 ──
     book.toc = toc_items
