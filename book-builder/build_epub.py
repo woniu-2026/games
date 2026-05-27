@@ -60,14 +60,14 @@ def main():
     metadata, pages = load_book(args.book_json)
     output = Path(args.output)
 
-    print(f"📖 开始生成: {metadata.get('title', 'Untitled')}")
+    print(f"开始生成: {metadata.get('title', 'Untitled')}")
     print(f"  页数: {len(pages)}")
     print(f"  输出: {output}")
 
     result = build_epub(metadata, pages, output, args.images)
 
     size = result.stat().st_size
-    print(f"✅ 生成成功! ({size / 1024:.1f} KB)")
+    print(f"生成成功! ({size / 1024:.1f} KB)")
     print(f"  文件: {result.resolve()}")
 
 
