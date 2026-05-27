@@ -15,7 +15,7 @@ def test_render_page_with_all_layers():
         "fg": "images/fg_001.png",
         "text": "测试文字"
     }
-    result = render_page(page, 1, "../css/style.css")
+    result = render_page(page, "../css/style.css")
 
     assert '<?xml version="1.0" encoding="UTF-8"?>' in result
     assert 'xmlns="http://www.w3.org/1999/xhtml"' in result
@@ -31,7 +31,7 @@ def test_render_page_with_all_layers():
 
 def test_render_page_minimal():
     page = {"id": 2, "bg": "images/bg_002.jpg", "text": "只有背景"}
-    result = render_page(page, 2, "../css/style.css")
+    result = render_page(page, "../css/style.css")
 
     assert "images/bg_002.jpg" in result
     assert "只有背景" in result
@@ -41,7 +41,7 @@ def test_render_page_minimal():
 
 def test_render_page_no_text():
     page = {"id": 3, "bg": "images/bg_003.jpg", "fg": "images/fg_003.png"}
-    result = render_page(page, 3, "../css/style.css")
+    result = render_page(page, "../css/style.css")
 
     assert "images/bg_003.jpg" in result
     assert 'story-text' not in result
@@ -55,7 +55,7 @@ def test_render_cover():
 
 def test_special_chars_escaped():
     page = {"id": 4, "bg": "images/bg.jpg", "text": "a < b & c > d"}
-    result = render_page(page, 4, "../css/style.css")
+    result = render_page(page, "../css/style.css")
     assert "&lt;" in result
     assert "&amp;" in result
     assert "< b" not in result
