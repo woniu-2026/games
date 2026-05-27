@@ -1,27 +1,12 @@
-"""ePUB3 package builder — constants and templates for animated picture books"""
+"""ePUB3 package builder — uses ebooklib for spec-compliant output"""
 
 import os
-import shutil
 import uuid
-import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
+
+from ebooklib import epub
 from page_renderer import render_page, render_cover
-
-# ── ePUB3 文件布局常量 ──
-META_INF = "META-INF"
-OEBPS = "OEBPS"
-XHTML_DIR = "xhtml"
-CSS_DIR = "css"
-IMAGE_DIR = "images"
-
-# ── 容器模板 ──
-CONTAINER_XML = """<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>"""
 
 # ── CSS 模板：包含视差动效 ──
 STYLE_CSS = """@charset "UTF-8";
@@ -35,7 +20,6 @@ html, body {
   background: #000;
 }
 
-/* 场景容器 */
 .scene {
   position: relative;
   width: 100%;
@@ -45,7 +29,6 @@ html, body {
   background: #fff;
 }
 
-/* 通用图层 */
 .layer {
   position: absolute;
   top: 0;
@@ -57,17 +40,14 @@ html, body {
   background-repeat: no-repeat;
 }
 
-/* 背景层：视差效果 */
 .layer-bg {
   /* 翻页时产生视差位移 */
 }
 
-/* 中景层 */
 .layer-mid {
   /* 可选的中间层，静止 */
 }
 
-/* 前景层：浮动呼吸动画 */
 .layer-fg {
   animation: float 3s ease-in-out infinite;
 }
@@ -77,7 +57,6 @@ html, body {
   50%      { transform: translateY(-5px); }
 }
 
-/* 文字叠层 */
 .text-overlay {
   position: absolute;
   bottom: 8%;
@@ -110,7 +89,6 @@ html, body {
   }
 }
 
-/* 封面专用 */
 .cover-page {
   width: 100%;
   height: 100vh;
@@ -118,19 +96,16 @@ html, body {
   background-position: center;
 }
 
-/* 翻页视差：Apple Books 通过 @page 控制 */
 @page {
   margin: 0;
   padding: 0;
 }
 """
 
-# ── 打包函数 ──
-
 
 def build_epub(book_meta: dict, pages: list[dict], output_path: str | Path,
                image_source_dir: str | Path = ".") -> Path:
-    """构建完整的 .epub 文件。
+    """构建完整的 .epub 文件（使用 ebooklib）。
 
     Args:
         book_meta: 书籍元数据字典（title, creator, language, identifier, cover）
@@ -143,199 +118,128 @@ def build_epub(book_meta: dict, pages: list[dict], output_path: str | Path,
     """
     output_path = Path(output_path)
     image_source = Path(image_source_dir)
-    epub_root = output_path.parent / f".epub_staging_{output_path.stem}"
 
-    try:
-        _create_structure(epub_root, book_meta, pages, image_source)
-        _pack_epub(epub_root, output_path)
-    finally:
-        if epub_root.exists():
-            shutil.rmtree(epub_root)
+    # 创建 EpubBook
+    book = epub.EpubBook()
 
-    return output_path
+    # ── 元数据 ──
+    book.set_identifier(book_meta.get("identifier", str(uuid.uuid4())))
+    book.set_title(book_meta.get("title", "Untitled"))
+    book.set_language(book_meta.get("language", "zh"))
+    if creator := book_meta.get("creator"):
+        book.add_author(creator)
 
+    # ── 渲染模式：pre-paginated ──
+    book.add_metadata(None, "meta", "pre-paginated", {
+        "property": "rendition:layout"
+    })
+    book.add_metadata(None, "meta", "auto", {
+        "property": "rendition:orientation"
+    })
+    book.add_metadata(None, "meta", "auto", {
+        "property": "rendition:spread"
+    })
 
-def _create_structure(epub_root: Path, meta: dict, pages: list[dict],
-                      image_source: Path):
-    """创建 ePUB 临时目录结构并写入所有文件。"""
-
-    # 创建目录
-    dirs = {
-        "META-INF": epub_root / META_INF,
-        "OEBPS": epub_root / OEBPS,
-        "XHTML": epub_root / OEBPS / XHTML_DIR,
-        "CSS": epub_root / OEBPS / CSS_DIR,
-        "IMAGES": epub_root / OEBPS / IMAGE_DIR,
-    }
-    for d in dirs.values():
-        d.mkdir(parents=True, exist_ok=True)
-
-    # 1. container.xml
-    (dirs["META-INF"] / "container.xml").write_text(CONTAINER_XML, encoding="utf-8")
-
-    # 2. style.css
-    (dirs["CSS"] / "style.css").write_text(STYLE_CSS, encoding="utf-8")
-
-    # 3. 封面页
-    cover_image = meta.get("cover", "")
-    if cover_image:
-        # XHTML 在 xhtml/ 子目录中，图片路径需加 ../ 前缀
-        cover_xhtml = render_cover(f"../{cover_image}", f"../{CSS_DIR}/style.css")
-        (dirs["XHTML"] / "cover.xhtml").write_text(cover_xhtml, encoding="utf-8")
-
-    # 4. 每页 xhtml
-    toc_entries = []
-    for i, page in enumerate(pages):
-        page_num = page.get("id", i + 1)
-        xhtml_name = f"page_{page_num:03d}.xhtml"
-        # 复制 page dict 并给图片路径加 ../ 前缀（从 xhtml/ 指向 images/）
-        page_copy = dict(page)
-        for key in ("bg", "mid", "fg"):
-            if page_copy.get(key):
-                page_copy[key] = f"../{page_copy[key]}"
-        xhtml_content = render_page(page_copy, f"../{CSS_DIR}/style.css")
-        (dirs["XHTML"] / xhtml_name).write_text(xhtml_content, encoding="utf-8")
-        toc_entries.append((xhtml_name, f"第{page_num}页"))
-
-    # 5. toc.xhtml
-    cover_label = "封面" if cover_image else None
-    toc_xhtml = _build_toc(
-        meta.get("title", "Book"),
-        cover_label,
-        toc_entries
+    # ── CSS ──
+    css_item = epub.EpubItem(
+        uid="style",
+        file_name="style.css",
+        media_type="text/css",
+        content=STYLE_CSS.encode("utf-8")
     )
-    (dirs["XHTML"] / "toc.xhtml").write_text(toc_xhtml, encoding="utf-8")
+    book.add_item(css_item)
 
-    # 6. content.opf
-    opf = _build_opf(meta, pages, cover_image)
-    (epub_root / OEBPS / "content.opf").write_text(opf, encoding="utf-8")
-
-    # 7. 复制图片
-    if image_source.exists():
-        for f in image_source.iterdir():
-            if f.is_file() and f.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
-                shutil.copy2(f, dirs["IMAGES"] / f.name)
-
-
-def _build_toc(title: str, cover_label: str | None, entries: list[tuple[str, str]]) -> str:
-    """生成 toc.xhtml 导航页面。"""
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">',
-        "  <head>",
-        f'    <title>{escape(title)}</title>',
-        "  </head>",
-        "  <body>",
-        '    <nav epub:type="toc">',
-        f'      <h1>{escape(title)}</h1>',
-        "      <ol>",
-    ]
-    if cover_label:
-        lines.append(f'        <li><a href="cover.xhtml">{escape(cover_label)}</a></li>')
-    for xhtml_name, label in entries:
-        lines.append(f'        <li><a href="{xhtml_name}">{escape(label)}</a></li>')
-    lines.extend([
-        "      </ol>",
-        "    </nav>",
-        "  </body>",
-        "</html>",
-    ])
-    return "\n".join(lines) + "\n"
-
-
-def _build_opf(meta: dict, pages: list[dict], cover_image: str) -> str:
-    """生成 content.opf 元数据文件。"""
-    title = escape(meta.get("title", "Untitled"))
-    creator = escape(meta.get("creator", "Unknown"))
-    lang = escape(meta.get("language", "en"))
-    identifier = escape(meta.get("identifier", f"urn:uuid:{uuid.uuid4()}"))
-
-    # 收集清单
-    manifest = []
-    spine = []
-
-    # CSS
-    manifest.append((f"{CSS_DIR}/style.css", "text/css", "style.css"))
-
-    # 封面页
+    # ── 封面图片 ──
+    cover_image = book_meta.get("cover", "")
     if cover_image:
-        manifest.append((f"{XHTML_DIR}/cover.xhtml", "application/xhtml+xml", "cover-xhtml"))
-        spine.append("cover-xhtml")
-        basename = os.path.basename(cover_image)
-        img_id = os.path.splitext(basename)[0]
-        manifest.append((f"{IMAGE_DIR}/{basename}", _mime_for(cover_image), img_id))
+        cover_img_path = image_source / os.path.basename(cover_image)
+        if cover_img_path.exists():
+            with open(cover_img_path, "rb") as f:
+                img_data = f.read()
+            cover_img_item = epub.EpubImage(
+                uid="cover-img",
+                file_name="images/cover-img.jpg",
+                media_type="image/jpeg",
+                content=img_data
+            )
+            book.add_item(cover_img_item)
 
-    # 页面
+    # ── 处理每页图片并添加为 EpubImage ──
+    page_images = {}  # (page_num, key) -> file_name
     for i, page in enumerate(pages):
         page_num = page.get("id", i + 1)
-        xhtml_name = f"page_{page_num:03d}.xhtml"
-        page_id = f"page-{page_num:03d}"
-        manifest.append((f"{XHTML_DIR}/{xhtml_name}", "application/xhtml+xml", page_id))
-        spine.append(page_id)
-
         for key in ("bg", "mid", "fg"):
             img_path = page.get(key)
             if img_path:
-                img_id = f"img-{page_num:03d}-{key}"
-                manifest.append((f"{IMAGE_DIR}/{os.path.basename(img_path)}", _mime_for(img_path), img_id))
+                basename = os.path.basename(img_path)
+                img_file = image_source / basename
+                if img_file.exists():
+                    img_id = f"img-{page_num:03d}-{key}"
+                    ext = img_file.suffix.lower()
+                    mime = "image/jpeg" if ext in (".jpg", ".jpeg") else "image/png"
+                    with open(img_file, "rb") as f:
+                        data = f.read()
+                    item = epub.EpubImage(
+                        uid=img_id,
+                        file_name=f"images/{basename}",
+                        media_type=mime,
+                        content=data
+                    )
+                    book.add_item(item)
+                    page_images[(page_num, key)] = f"images/{basename}"
 
-    # TOC
-    manifest.append((f"{XHTML_DIR}/toc.xhtml", "application/xhtml+xml", "toc"))
-    spine.append("toc")
+    # ── 构建每页 XHTML ──
+    spine = []
+    toc_items = []
 
-    # 构建 XML
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">',
-        '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">',
-        f'    <dc:identifier id="book-id">{identifier}</dc:identifier>',
-        f'    <dc:title>{title}</dc:title>',
-        f'    <dc:creator>{creator}</dc:creator>',
-        f'    <dc:language>{lang}</dc:language>',
-        '    <meta property="rendition:layout">pre-paginated</meta>',
-        '    <meta property="rendition:orientation">auto</meta>',
-        '    <meta property="rendition:spread">none</meta>',
-        "  </metadata>",
-        "  <manifest>",
-    ]
-    for href, media_type, item_id in manifest:
-        lines.append(f'    <item id="{item_id}" href="{href}" media-type="{media_type}"/>')
-    lines.extend([
-        "  </manifest>",
-        "  <spine>",
-    ])
-    for item_id in spine:
-        lines.append(f'    <itemref idref="{item_id}"/>')
-    lines.extend([
-        "  </spine>",
-        "</package>",
-    ])
-    return "\n".join(lines) + "\n"
+    # 封面页
+    if cover_image:
+        cover = epub.EpubHtml(
+            title="封面",
+            file_name="xhtml/cover.xhtml",
+            lang=book_meta.get("language", "zh")
+        )
+        cover_css_path = "../style.css"
+        cover_content = render_cover("../images/cover-img.jpg", cover_css_path)
+        cover.content = cover_content.encode("utf-8")
+        cover.add_item(css_item)
+        book.add_item(cover)
+        spine.append(cover)
+        toc_items.append(epub.Link("xhtml/cover.xhtml", "封面", "cover-nav"))
 
+    # 内容页
+    for i, page in enumerate(pages):
+        page_num = page.get("id", i + 1)
+        xhtml_name = f"page_{page_num:03d}.xhtml"
 
-def _mime_for(path: str) -> str:
-    """根据文件扩展名返回 MIME 类型。"""
-    ext = os.path.splitext(path)[1].lower()
-    return {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
-        ".css": "text/css",
-        ".xhtml": "application/xhtml+xml",
-        ".xml": "application/xml",
-    }.get(ext, "application/octet-stream")
+        # 调整图片路径（从 xhtml/ 到 images/）
+        page_copy = dict(page)
+        for key in ("bg", "mid", "fg"):
+            if page_copy.get(key):
+                filename = os.path.basename(page_copy[key])
+                page_copy[key] = f"../images/{filename}"
 
+        xhtml_content = render_page(page_copy, "../style.css")
 
-def _pack_epub(epub_root: Path, output_path: Path):
-    """将临时目录打包为 .epub（标准 ZIP 格式）。"""
-    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # mimetype 必须是第一个文件，且不压缩
-        zf.writestr("mimetype", "application/epub+zip",
-                     compress_type=zipfile.ZIP_STORED)
+        chapter = epub.EpubHtml(
+            title=f"第{page_num}页",
+            file_name=f"xhtml/{xhtml_name}",
+            lang=book_meta.get("language", "zh")
+        )
+        chapter.content = xhtml_content.encode("utf-8")
+        chapter.add_item(css_item)
+        book.add_item(chapter)
+        spine.append(chapter)
+        toc_items.append(epub.Link(f"xhtml/{xhtml_name}", f"第{page_num}页", f"page-{page_num:03d}"))
 
-        for f in sorted(epub_root.rglob("*")):
-            if f.is_file():
-                arcname = str(f.relative_to(epub_root))
-                zf.write(f, arcname)
+    # ── 设置目录 ──
+    book.toc = toc_items
+
+    # ── 设置 spine ──
+    book.spine = spine
+
+    # ── 写入 ePUB ──
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    epub.write_epub(str(output_path), book, {})
+
+    return output_path
